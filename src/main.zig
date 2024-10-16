@@ -3,7 +3,8 @@ const net = std.net;
 const Allocator = std.mem.Allocator;
 
 const log = std.log.scoped(.Server);
-const Serve = @import("serve.zig");
+const Serve = @import("Serve.zig");
+const Cache = @import("Cache.zig");
 
 pub fn main() !void {
     var general_purpose_allocator: std.heap.GeneralPurposeAllocator(.{}) = .init;
@@ -16,9 +17,15 @@ pub fn main() !void {
     defer http_server.deinit();
 
     var context: Serve.Context = .{
-        .gpa = gpa,
+        .allocator = gpa,
         .port = address.getPort(),
+        .cache = try Cache.init(
+            gpa,
+            std.math.maxInt(u16),
+            true,
+        ),
     };
+    defer context.cache.deinit();
 
     log.info("Start server at http://localhost:{}", .{address.getPort()});
 

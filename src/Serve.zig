@@ -1,11 +1,16 @@
 const std = @import("std");
 const http = std.http;
 const Allocator = std.mem.Allocator;
+const json = std.json;
+const fmt = std.fmt;
+
 const log = std.log.scoped(.log);
+const Cache = @import("Cache.zig");
 
 pub const Context = struct {
-    gpa: Allocator,
+    allocator: Allocator,
     port: u16,
+    cache: Cache,
 };
 
 pub fn accept(context: *Context, connection: std.net.Server.Connection) void {
@@ -46,16 +51,60 @@ fn serveRequest(request: *std.http.Server.Request, context: *Context) !void {
 }
 
 fn get(request: *std.http.Server.Request, context: *Context) !void {
-    _ = context;
-    log.info("{s}: {s}", .{ @tagName(request.head.method), request.head.target });
+    const key = request.head.target[1..];
+    log.info("{s}: {s}", .{ @tagName(request.head.method), key });
+    const value = context.cache.get(key) orelse {
+        try request.respond("Key not found", .{
+            .status = .not_found,
+            .keep_alive = false,
+            .extra_headers = &.{
+                .{ .name = "content-type", .value = "text/plain" },
+            },
+        });
+        return;
+    };
+
+    try request.respond(value, .{
+        .keep_alive = false,
+        .extra_headers = &.{
+            .{ .name = "content-type", .value = "text/plain" },
+        },
+    });
 }
 
 fn post(request: *std.http.Server.Request, context: *Context) !void {
-    _ = context;
-    log.info("{s}: {s}", .{ @tagName(request.head.method), request.head.target });
+    // get request content
+    const reader = try request.reader();
+    const content = try reader.readAllAlloc(context.allocator, 1024);
+    log.info("{s}: {s} {s}", .{ @tagName(request.head.method), request.head.target, content });
+
+    // add to cache
+    var parsed = try json.parseFromSlice(json.Value, context.allocator, content, .{});
+    defer parsed.deinit();
+
+    const key = try context.allocator.dupe(u8, parsed.value.object.keys()[0]);
+    try context.cache.put(key, content);
+
+    // respond
+    try request.respond("", .{
+        .keep_alive = false,
+        .extra_headers = &.{
+            .{ .name = "content-type", .value = "text/plain" },
+        },
+    });
 }
 
 fn delete(request: *std.http.Server.Request, context: *Context) !void {
-    _ = context;
-    log.info("{s}: {s}", .{ @tagName(request.head.method), request.head.target });
+    const key = request.head.target[1..];
+    log.info("{s}: {s}", .{ @tagName(request.head.method), key });
+
+    const num = if (context.cache.remove(key)) @as(u8, 1) else @as(u8, 0);
+    const content = try fmt.allocPrint(context.allocator, "{d}", .{num});
+
+    try request.respond(content, .{
+        .keep_alive = false,
+        .extra_headers = &.{
+            .{ .name = "content-type", .value = "text/plain" },
+        },
+    });
 }
