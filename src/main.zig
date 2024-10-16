@@ -6,11 +6,24 @@ const log = std.log.scoped(.Server);
 const Serve = @import("Serve.zig");
 const Cache = @import("Cache.zig");
 
+const ports = [_:0]u16{ 9527, 9528, 9529 };
+
 pub fn main() !void {
+    if (std.os.argv.len != 2) {
+        std.debug.print("Usage: sdcs-zig port-num", .{});
+        return;
+    }
+
     var general_purpose_allocator: std.heap.GeneralPurposeAllocator(.{}) = .init;
     const gpa = general_purpose_allocator.allocator();
 
-    const address = try net.Address.parseIp4("127.0.0.1", 10086);
+    const node_num = try std.fmt.parseInt(u16, std.mem.sliceTo(std.os.argv[1], 0), 10);
+    if (node_num >= ports.len) {
+        std.debug.print("Only support up to {d} nodes\n", .{ports.len});
+        return;
+    }
+    const port = ports[node_num];
+    const address = try net.Address.parseIp4("127.0.0.1", port);
     var http_server = try address.listen(.{
         .reuse_address = true,
     });
@@ -19,6 +32,7 @@ pub fn main() !void {
     var context: Serve.Context = .{
         .allocator = gpa,
         .port = address.getPort(),
+        .ports = &ports,
         .cache = try Cache.init(
             gpa,
             std.math.maxInt(u16),
@@ -27,7 +41,7 @@ pub fn main() !void {
     };
     defer context.cache.deinit();
 
-    log.info("Start server at http://localhost:{}", .{address.getPort()});
+    std.debug.print("Start server at http://localhost:{}\n", .{address.getPort()});
 
     while (true) {
         const connection = try http_server.accept();

@@ -40,6 +40,9 @@ pub fn put(self: *Self, key: []const u8, value: []const u8) !void {
         self.list.remove(node);
         self.list.prepend(node);
         self.nbytes += value.len - node.data.value.len;
+        if (self.free_mem) {
+            self.allocator.free(node.data.value);
+        }
         node.data.value = value;
     } else {
         const node = try self.allocator.create(Node);
