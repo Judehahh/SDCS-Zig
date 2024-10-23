@@ -36,7 +36,6 @@ pub fn main() !void {
         .cache = try Cache.init(
             gpa,
             std.math.maxInt(u16),
-            true,
         ),
     };
     defer context.cache.deinit();

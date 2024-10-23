@@ -1,22 +1,22 @@
 const std = @import("std");
 const Mutex = std.Thread.Mutex;
 const Allocator = std.mem.Allocator;
-const LRU = @import("LRU.zig");
+const StringArrayHashMap = std.StringArrayHashMap;
 const testing = std.testing;
 
 mutex: Mutex,
 allocator: Allocator,
-lru: LRU,
-cache_bytes: usize,
+cache: std.StringArrayHashMap([]const u8),
 
 const Self = @This();
 
-pub fn init(allocator: Allocator, cache_bytes: usize, free_mem: bool) !Self {
+pub fn init(allocator: Allocator, cache_bytes: usize) !Self {
+    var cache = StringArrayHashMap([]const u8).init(allocator);
+    try cache.ensureTotalCapacity(cache_bytes);
     return .{
         .mutex = Mutex{},
         .allocator = allocator,
-        .cache_bytes = cache_bytes,
-        .lru = try LRU.init(allocator, cache_bytes, free_mem),
+        .cache = cache,
     };
 }
 
@@ -24,32 +24,32 @@ pub fn deinit(self: *Self) void {
     self.mutex.lock();
     defer self.mutex.unlock();
 
-    self.lru.deinit();
+    self.cache.deinit();
 }
 
 pub fn put(self: *Self, key: []const u8, value: []const u8) !void {
     self.mutex.lock();
     defer self.mutex.unlock();
 
-    try self.lru.put(key, value);
+    try self.cache.put(key, value);
 }
 
 pub fn get(self: *Self, key: []const u8) ?[]const u8 {
     self.mutex.lock();
     defer self.mutex.unlock();
 
-    return self.lru.get(key);
+    return self.cache.get(key);
 }
 
 pub fn remove(self: *Self, key: []const u8) bool {
     self.mutex.lock();
     defer self.mutex.unlock();
 
-    return self.lru.remove(key);
+    return self.cache.swapRemove(key);
 }
 
 test "test put(), get() and remove()" {
-    var cache = try Self.init(testing.allocator, 64, false);
+    var cache = try Self.init(testing.allocator, 64);
     defer cache.deinit();
 
     try cache.put("key1", "value1");
